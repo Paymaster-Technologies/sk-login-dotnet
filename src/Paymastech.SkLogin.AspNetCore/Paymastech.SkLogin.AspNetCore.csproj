@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net7.0;net8.0</TargetFrameworks>
+    <RootNamespace>Paymastech.SkLogin.AspNetCore</RootNamespace>
+    <PackageId>Paymastech.SkLogin.AspNetCore</PackageId>
+    <Description>Sign in with Secret Keeper for ASP.NET Core: AddSkLogin + MapSkLogin give the five endpoints the browser widget and the Secret Keeper app talk to.</Description>
+    <PackageTags>secret-keeper;authentication;passwordless;qr-login;aspnetcore</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <ProjectReference Include="..\Paymastech.SkLogin\Paymastech.SkLogin.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

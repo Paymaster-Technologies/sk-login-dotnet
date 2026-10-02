@@ -1,0 +1,193 @@
+# Sign in with Secret Keeper for .NET (SK login)
+
+Passwordless sign-in for a website: the user scans a QR code with the
+Secret Keeper app (or opens it with a button on the phone), confirms in
+the app, and the server receives their `sk1…` address and decides who
+gets in. The server and the app exchange encrypted envelopes; the server
+sees only the user's address.
+
+This is the .NET implementation of the same protocol as
+[paymastech/sk-login](https://github.com/paymastech/sk-login) (Node:
+core, NestJS module and browser widget). The servers are interchangeable:
+the widget from that repository works with this server unchanged, and
+the cryptography is verified against the app with the same test vectors.
+
+| Package | What it is |
+| --- | --- |
+| [`Paymastech.SkLogin`](src/Paymastech.SkLogin) | The protocol without any web framework dependency: envelope cryptography (X25519, XChaCha20-Poly1305, BIP-39, bech32), requests, challenge code, verification, request store. `net7.0`, `net8.0`. |
+| [`Paymastech.SkLogin.AspNetCore`](src/Paymastech.SkLogin.AspNetCore) | `AddSkLogin` + `MapSkLogin`: five endpoints for the widget and the app, QR as SVG. Minimal APIs, also suitable for apps built on MVC controllers. |
+| [`examples/AspNetCoreDemo`](examples/AspNetCoreDemo) | A working application: module + widget + cookie session, plus a phone emulation for development. |
+
+## Quick start
+
+```bash
+dotnet add package Paymastech.SkLogin.AspNetCore
+```
+
+Until the packages are published to NuGet, the `.nupkg` files are attached to the
+[release](https://github.com/paymastech/sk-login-dotnet/releases/latest):
+download both into a folder and add it as a source
+(`dotnet nuget add source ./packages -n sk-login-local`).
+
+```csharp
+using Paymastech.SkLogin;
+using Paymastech.SkLogin.AspNetCore;
+
+builder.Services.AddSkLogin<User>(o =>
+{
+    o.Mnemonic = builder.Configuration["SK_SERVER_MNEMONIC"];   // 12 BIP-39 words, see "Secrets"
+    o.Target = new SkLoginTarget { Id = "my-service", PublicUrl = "https://api.example.com" };
+    // Who gets in: called once after confirmation, receives the sk1… address
+    o.Access = async address =>
+    {
+        var user = await users.FindByAddressAsync(address);
+        return user is null ? AccessDecision<User>.Denied("unknown-address") : AccessDecision<User>.Granted(user);
+    };
+    // The browser learned about admission: issue a session. The return value is merged into the JSON response.
+    o.OnAuthenticated = async (user, http) =>
+    {
+        await http.SignInAsync(principalFor(user));        // or your own cookie/JWT
+        return new { userId = user.Id };
+    };
+});
+
+var app = builder.Build();
+app.MapSkLogin<User>("/api/sk");
+```
+
+For access to the container there is an overload `AddSkLogin<User>((sp, o) => …)`.
+The `login` endpoint reads the `text/plain` body itself; body size limits
+and MVC binding do not apply to it.
+
+Sign-in page: the widget comes from
+[`@paymastech/sk-login-widget`](https://github.com/paymastech/sk-login/tree/main/packages/widget)
+(a single file `sk-login-widget.global.js`, no framework; a copy lives in
+`examples/AspNetCoreDemo/wwwroot`):
+
+```html
+<script src="/sk-login-widget.js"></script>
+<button id="login">Sign in</button>
+<script>
+  const login = SkLoginWidget.mountSkLogin({
+    apiBase: '/api/sk',
+    lang: 'en',
+    onSuccess: (extra) => location.reload(),   // extra = what OnAuthenticated returned
+  });
+  document.getElementById('login').onclick = () => login.open();
+</script>
+```
+
+## Onboarding a new service (checklist)
+
+Targets (where the app is allowed to send a request) are built into the
+Secret Keeper app: id, URL of the `login` endpoint and the server address.
+Without an entry in the app, sign-in will not work. For a new service:
+
+1. Generate a server mnemonic (once, keep it as a secret):
+   `string.Join(' ', Identity.GenerateMnemonic())` or from the demo:
+   `dotnet run --project examples/AspNetCoreDemo -- --mnemonic`.
+2. Run the service with `Target.Id` and `PublicUrl`. Open
+   `GET <PublicUrl>/api/sk/target`: it returns `id`, `url`, `serverAddress`
+   (`sk1…`) and `checkDigits` for verification by voice.
+3. Hand this JSON to the Secret Keeper team. They will add the target to
+   the app and ship a release; until then, sign-in is tested with the phone
+   emulation (see the demo, `DEMO_FAKE_PHONE=1`).
+4. The `login` endpoint must be reachable from the internet over HTTPS: it
+   is called by the phone, not by the browser.
+5. If `serverAddress` changes (new mnemonic), the target in the app must be
+   updated.
+
+## Secrets and environment
+
+`SK_SERVER_MNEMONIC`: 12 words. The server keys are derived from it. A leak
+means the ability to impersonate the service to the app. Keep it in a secret
+manager / user-secrets, never log it. Instead of a mnemonic you can pass a
+ready `Identity` (`Identity.DeriveIdentityKeys`). The module makes no network
+calls: everything happens between your server, the browser and the user's phone.
+
+## HTTP API
+
+The default prefix is `/api/sk`. Browser routes: `init`, `status`,
+`code`. Phone route: `login`. Service route: `target`.
+
+| Method and path | Caller | Request | Response |
+| --- | --- | --- | --- |
+| `POST init` | browser | empty | `{ sid, payloadUrl, schemeUrl, expiresAt, ttlMs, qrSvg? }` |
+| `POST login` | app | `text/plain`, envelope | challenge envelope as `text/plain` (for `sk-login`), `{ sent: true }` (for `sk-login-code`), `204` (for `sk-login-cancel`) or `4xx { error, message }` |
+| `GET status?sid=` | browser | | `{ state, reason?, ...extra }`, `state`: `new`, `challenged`, `authenticated`, `denied`, `cancelled`, `expired` |
+| `POST code` | browser | `{ sid, code }` | `{ ok: true, ...extra }`, `403 { denied, reason, message }` or `4xx { error, message }` |
+| `GET target` | people | | `{ id, v, url, serverAddress, checkDigits }` |
+
+| `error` code | Status | When |
+| --- | --- | --- |
+| `bad-envelope` | 400 / 413 | the body is not an envelope, failed to decrypt, is addressed to another server, or is too large |
+| `bad-meta` | 400 | meta lacks `type`/`sid`, the target is foreign or the type is unknown |
+| `in-progress` | 409 | a request from another address is already in progress for this sid, or a code/cancel arrived without a request |
+| `sid-expired` | 404 | sid not found or expired (2 minutes by default) |
+| `code-invalid` | 400 / 410 | the code did not match; after 5 attempts the request is closed (410) |
+| `access-denied` | 403 | `Access` returned `Denied`; `reason` carries its reason |
+
+`OnAuthenticated` is called exactly once per request: on the first
+`status` with `authenticated` or on a successful `code`. Further `status`
+calls for that sid answer `expired`.
+
+## Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `Mnemonic` or `Identity` | one is required | server identity |
+| `Target.Id` | required | id from the app's target list |
+| `Target.PublicUrl` | from `Host` and `X-Forwarded-Proto` | origin for `GET target` |
+| `Access(address)` | required | `AccessDecision<T>.Granted(user)` or `.Denied(reason, message?)` |
+| `OnAuthenticated(user, HttpContext)` | | session, cookie, token; the return value goes into the JSON for the browser |
+| `Store` | `MemoryPendingStore<T>` | request store, see "Multiple replicas" |
+| `Ttl` | 2 minutes | sid lifetime |
+| `TrustProxy` | `true` | take the IP from the last `X-Forwarded-For` element |
+| `Geo(ip)` | | city and country for the context shown in the app |
+| `Describe(ctx, lang)` | built-in | custom context lines |
+| `Messages` | ru/en | override messages (for example `AccessDenied`) |
+| `Qr` | `true` | include `qrSvg` in `init` (QRCoder) |
+| `MaxBodyBytes` | 16 KiB | envelope body limit |
+
+`SkLoginService<TUser>` is registered in DI: through it you can call
+`Core.InitAsync / PollAsync / SubmitCodeAsync` from your own controllers
+if the standard endpoints do not fit (for example, to finish the sign-in
+inside your own SSO pipeline).
+
+## Multiple replicas
+
+A request lives for 2 minutes and spans three calls from two clients (browser
+and phone). With `MemoryPendingStore` they must land on the same process.
+With several instances you need sticky sessions by `sid` or your own
+`IPendingStore<TUser>` on top of Redis or a database:
+
+```csharp
+public interface IPendingStore<TUser>
+{
+    Task<Pending<TUser>?> GetAsync(string sid, CancellationToken ct = default);
+    Task SetAsync(Pending<TUser> entry, TimeSpan ttl, CancellationToken ct = default);
+    Task DeleteAsync(string sid, CancellationToken ct = default);
+}
+```
+
+`Pending<TUser>` is serialized by `System.Text.Json` as is; `SetAsync`
+is `SET sid json PX ttl`.
+
+## Development
+
+```bash
+dotnet test                                   # 31 tests: app vectors, protocol, HTTP
+dotnet run --project examples/AspNetCoreDemo  # http://localhost:5000, random mnemonic
+DEMO_FAKE_PHONE=1 dotnet run --project examples/AspNetCoreDemo   # plus POST /demo/phone?sid=…
+dotnet pack -c Release -o ./artifacts
+```
+
+Test vectors: `tests/Paymastech.SkLogin.Tests/Fixtures/test_vectors.json`
+(generator `secret_keeper/tools/test_vectors`) and `app_fixtures.json`
+(envelopes recorded by the app itself). Compatibility with the Node core
+has also been verified with a live run: a "phone" built on
+`@paymastech/sk-login-core` completes a sign-in against this server.
+
+## License
+
+MIT.

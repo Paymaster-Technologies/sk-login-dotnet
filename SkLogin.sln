@@ -1,0 +1,52 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{ACB6DAFD-698B-45AB-A429-C21F4E7431F2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Paymastech.SkLogin.AspNetCore", "src\Paymastech.SkLogin.AspNetCore\Paymastech.SkLogin.AspNetCore.csproj", "{E8FEADFA-4418-4339-813F-F39DA5514E08}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Paymastech.SkLogin", "src\Paymastech.SkLogin\Paymastech.SkLogin.csproj", "{73743F73-B3E8-4252-B245-2C9C9F63FE56}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{A35043D8-7F11-42A3-9557-30FC236EE96C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Paymastech.SkLogin.Tests", "tests\Paymastech.SkLogin.Tests\Paymastech.SkLogin.Tests.csproj", "{466FFB37-C0F8-4A32-82CC-E187AF43E502}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples", "examples", "{74BD7DB1-E1EB-4879-B138-7F7D068F02D3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AspNetCoreDemo", "examples\AspNetCoreDemo\AspNetCoreDemo.csproj", "{A33186CB-318D-4589-A7E5-6B218F4EB472}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E8FEADFA-4418-4339-813F-F39DA5514E08}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E8FEADFA-4418-4339-813F-F39DA5514E08}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E8FEADFA-4418-4339-813F-F39DA5514E08}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E8FEADFA-4418-4339-813F-F39DA5514E08}.Release|Any CPU.Build.0 = Release|Any CPU
+		{73743F73-B3E8-4252-B245-2C9C9F63FE56}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{73743F73-B3E8-4252-B245-2C9C9F63FE56}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{73743F73-B3E8-4252-B245-2C9C9F63FE56}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{73743F73-B3E8-4252-B245-2C9C9F63FE56}.Release|Any CPU.Build.0 = Release|Any CPU
+		{466FFB37-C0F8-4A32-82CC-E187AF43E502}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{466FFB37-C0F8-4A32-82CC-E187AF43E502}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{466FFB37-C0F8-4A32-82CC-E187AF43E502}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{466FFB37-C0F8-4A32-82CC-E187AF43E502}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A33186CB-318D-4589-A7E5-6B218F4EB472}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A33186CB-318D-4589-A7E5-6B218F4EB472}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A33186CB-318D-4589-A7E5-6B218F4EB472}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A33186CB-318D-4589-A7E5-6B218F4EB472}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{E8FEADFA-4418-4339-813F-F39DA5514E08} = {ACB6DAFD-698B-45AB-A429-C21F4E7431F2}
+		{73743F73-B3E8-4252-B245-2C9C9F63FE56} = {ACB6DAFD-698B-45AB-A429-C21F4E7431F2}
+		{466FFB37-C0F8-4A32-82CC-E187AF43E502} = {A35043D8-7F11-42A3-9557-30FC236EE96C}
+		{A33186CB-318D-4589-A7E5-6B218F4EB472} = {74BD7DB1-E1EB-4879-B138-7F7D068F02D3}
+	EndGlobalSection
+EndGlobal

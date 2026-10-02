@@ -1,0 +1,9 @@
+bin/
+obj/
+artifacts/
+*.user
+.vs/
+.idea/
+*.swp
+.DS_Store
+examples/AspNetCoreDemo/appsettings.Development.json

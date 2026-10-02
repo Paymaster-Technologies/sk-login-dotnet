@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net7.0;net8.0</TargetFrameworks>
+    <RootNamespace>Paymastech.SkLogin</RootNamespace>
+    <PackageId>Paymastech.SkLogin</PackageId>
+    <Description>Sign in with Secret Keeper: protocol core (envelopes, two-step challenge, pending store), framework-agnostic.</Description>
+    <PackageTags>secret-keeper;authentication;passwordless;qr-login</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.5.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Crypto\bip39-english.txt" LogicalName="bip39-english.txt" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

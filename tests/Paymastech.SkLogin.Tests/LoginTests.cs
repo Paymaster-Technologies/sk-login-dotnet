@@ -47,7 +47,7 @@ public class LoginTests
     private long _now = 1_700_000_000_000;
     private readonly IdentityKeys _server = Identity.DeriveIdentityKeys(Identity.GenerateMnemonic());
 
-    private SkLogin<string> Login(Action<SkLoginOptionsBuilder>? configure = null)
+    private SkLogin<string> Login(Action<SkLoginOptionsBuilder>? configure = null, string? hub = null)
     {
         var b = new SkLoginOptionsBuilder();
         configure?.Invoke(b);
@@ -55,6 +55,7 @@ public class LoginTests
         {
             Identity = _server,
             Target = Target,
+            Hub = hub,
             Access = b.Access ?? (address => ValueTask.FromResult(AccessDecision<string>.Granted("user:" + address))),
             Ttl = b.Ttl ?? SkLogin.DefaultSidTtl,
             Messages = b.Messages,
@@ -86,6 +87,25 @@ public class LoginTests
         Assert.StartsWith("sk://auth?", init.SchemeUrl);
         Assert.Equal(_now + 120_000, init.ExpiresAt);
         Assert.Equal("new", (await login.PollAsync(init.Sid)).State);
+    }
+
+    [Fact]
+    public async Task HubModePointsThePayloadAtTheHubAndKeepsEnvelopesUnchanged()
+    {
+        var login = Login(hub: "auth_secretkeeper");
+        var init = await login.InitAsync();
+        var query = System.Web.HttpUtility.ParseQueryString(new Uri(init.PayloadUrl).Query);
+        Assert.Equal("auth_secretkeeper", query["target"]);
+        Assert.Equal("demo", query["destination"]);
+        Assert.Equal(init.Sid, query["sid"]);
+        // The envelopes the hub relays still carry the service id as target.
+        var app = new FakeApp(login.ServerAddress);
+        Assert.IsType<EnvelopeReply.Challenge>(await login.HandleEnvelopeAsync(app.Request(init.Sid)));
+        Assert.Equal("challenged", (await login.PollAsync(init.Sid)).State);
+        // An empty hub means direct mode.
+        var direct = await Login(hub: "").InitAsync();
+        Assert.Contains("target=demo", direct.PayloadUrl);
+        Assert.DoesNotContain("destination", direct.PayloadUrl);
     }
 
     [Fact]

@@ -122,7 +122,16 @@ public static class SkLoginEndpointRouteBuilderExtensions
             var origin = sk.Options.Target!.PublicUrl?.TrimEnd('/') ?? OriginOf(http.Request);
             var loginUrl = $"{origin}{prefix.TrimEnd('/')}/login";
             var t = sk.Target(loginUrl);
-            return Results.Json(new { id = t.Id, v = t.V, url = t.Url, serverAddress = t.ServerAddress, checkDigits = t.CheckDigits }, Json);
+            var body = new Dictionary<string, object?>
+            {
+                ["id"] = t.Id,
+                ["v"] = t.V,
+                ["url"] = t.Url,
+                ["serverAddress"] = t.ServerAddress,
+                ["checkDigits"] = t.CheckDigits,
+            };
+            if (t.Hub is not null) body["hub"] = t.Hub;
+            return Results.Json(body, Json);
         });
 
         return group;

@@ -29,7 +29,12 @@ var sessions = new ConcurrentDictionary<string, User>();
 builder.Services.AddSkLogin<User>(o =>
 {
     o.Mnemonic = mnemonic;
-    o.Target = new SkLoginTarget { Id = Environment.GetEnvironmentVariable("SK_TARGET") ?? "demo" };
+    // SK_HUB=auth_secretkeeper switches the QR to hub mode (see README, "Hub").
+    o.Target = new SkLoginTarget
+    {
+        Id = Environment.GetEnvironmentVariable("SK_TARGET") ?? "demo",
+        Hub = Environment.GetEnvironmentVariable("SK_HUB"),
+    };
     // The demo admits everyone: a real service would look up the user by sk1… address, check an allowlist or link to an account here.
     o.Access = address => ValueTask.FromResult(AccessDecision<User>.Granted(new User(address)));
     // The browser learned about admission: issue a cookie session. The return value goes into the JSON (the widget passes it to onSuccess).

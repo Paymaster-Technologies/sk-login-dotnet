@@ -4,7 +4,14 @@ using QRCoder;
 
 namespace Paymastech.SkLogin.AspNetCore;
 
-public sealed record TargetInfo(string Id, int V, string Url, string ServerAddress, string CheckDigits);
+/// <summary>What GET target returns: the entry for the Secret Keeper app or the hub registry.</summary>
+/// <param name="Id">Service id (target in direct mode, destination in hub mode).</param>
+/// <param name="V">Protocol version.</param>
+/// <param name="Url">Login endpoint URL the app (or the hub) posts envelopes to.</param>
+/// <param name="ServerAddress">sk1… address of the server identity.</param>
+/// <param name="CheckDigits">Check digits of the address for visual comparison.</param>
+/// <param name="Hub">Hub target id in hub mode, otherwise null (omitted from JSON).</param>
+public sealed record TargetInfo(string Id, int V, string Url, string ServerAddress, string CheckDigits, string? Hub = null);
 
 /// <summary>
 /// Core wrapper for ASP.NET Core: request context from HttpContext, QR for the
@@ -49,7 +56,7 @@ public sealed class SkLoginService<TUser>
 
     /// <summary>Target parameters to be recorded in the Secret Keeper app.</summary>
     public TargetInfo Target(string loginUrl) =>
-        new(Options.Target!.Id, SkLogin.Version, loginUrl, ServerAddress, Identity.KeyCheckDigits(Core_X25519Public()));
+        new(Options.Target!.Id, SkLogin.Version, loginUrl, ServerAddress, Identity.KeyCheckDigits(Core_X25519Public()), Options.Target.Hub);
 
     private byte[] Core_X25519Public() => Identity.DecodeIdentityAddress(ServerAddress);
 

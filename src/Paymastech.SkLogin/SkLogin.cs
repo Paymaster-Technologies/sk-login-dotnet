@@ -61,8 +61,13 @@ public sealed class SkLoginOptions<TUser>
 {
     /// <summary>Server identity; its sk1… address is recorded in the app's target list.</summary>
     public required IdentityKeys Identity { get; init; }
-    /// <summary>Target id as in the app's skLoginTargets; envelopes with another target are rejected.</summary>
+    /// <summary>Target id: the service id in the app's skLoginTargets (direct mode) or its
+    /// destination in the hub registry (hub mode). Envelopes with another target are rejected.</summary>
     public required string Target { get; init; }
+    /// <summary>Hub mode: the hub's target id in the app (for example auth_secretkeeper). The QR then
+    /// carries target=&lt;hub&gt;&amp;destination=&lt;Target&gt;, the app sends envelopes through the hub and
+    /// the hub relays them to this server. The inner envelope and its meta do not change.</summary>
+    public string? Hub { get; init; }
     public required AccessDecider<TUser> Access { get; init; }
     public IPendingStore<TUser>? Store { get; init; }
     public TimeSpan Ttl { get; init; } = SkLogin.DefaultSidTtl;
@@ -132,6 +137,8 @@ public sealed class SkLogin<TUser>
     private readonly Dictionary<Lang, Messages> _messages;
 
     public string Target { get; }
+    /// <summary>Hub target id in hub mode, otherwise null.</summary>
+    public string? Hub { get; }
     public TimeSpan Ttl { get; }
     public string ServerAddress => _identity.Address;
     public IReadOnlyDictionary<Lang, Messages> Messages => _messages;
@@ -140,6 +147,7 @@ public sealed class SkLogin<TUser>
     {
         _identity = options.Identity;
         Target = options.Target;
+        Hub = string.IsNullOrEmpty(options.Hub) ? null : options.Hub;
         _access = options.Access;
         Ttl = options.Ttl;
         _now = options.Now ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -160,7 +168,9 @@ public sealed class SkLogin<TUser>
         var createdAt = _now();
         var expiresAt = createdAt + (long)Ttl.TotalMilliseconds;
         await SaveAsync(new Pending<TUser> { Sid = sid, CreatedAt = createdAt, ExpiresAt = expiresAt, State = PendingState.New, Ctx = ctx }, ct);
-        var query = $"v={SkLogin.Version}&sid={Uri.EscapeDataString(sid)}&target={Uri.EscapeDataString(Target)}";
+        var query = Hub is null
+            ? $"v={SkLogin.Version}&sid={Uri.EscapeDataString(sid)}&target={Uri.EscapeDataString(Target)}"
+            : $"v={SkLogin.Version}&sid={Uri.EscapeDataString(sid)}&target={Uri.EscapeDataString(Hub)}&destination={Uri.EscapeDataString(Target)}";
         return new InitResult(sid, $"{SkLogin.AuthUrl}?{query}", $"{SkLogin.AuthSchemeUrl}?{query}", expiresAt, (long)Ttl.TotalMilliseconds);
     }
 

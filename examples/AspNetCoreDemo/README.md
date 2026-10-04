@@ -7,6 +7,7 @@ a page with a "Sign in" button, an in-memory cookie session, `GET /me`, `GET /lo
 dotnet run --project examples/AspNetCoreDemo                 # random mnemonic, http://localhost:5000
 dotnet run --project examples/AspNetCoreDemo -- --mnemonic   # print a new mnemonic
 SK_SERVER_MNEMONIC="…" SK_TARGET=my-service dotnet run --project examples/AspNetCoreDemo
+SK_TARGET=my-service SK_HUB=auth_secretkeeper dotnet run --project examples/AspNetCoreDemo   # QR in hub mode, see README "Hub"
 ```
 
 Phone emulation for development without the app:

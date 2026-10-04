@@ -14,8 +14,12 @@ public delegate ValueTask<object?> OnAuthenticated<TUser>(TUser user, HttpContex
 
 public sealed class SkLoginTarget
 {
-    /// <summary>Target id in the Secret Keeper app's skLoginTargets.</summary>
+    /// <summary>Service id: the entry in the Secret Keeper app's skLoginTargets (direct mode) or the
+    /// destination registered at the hub (hub mode).</summary>
     public required string Id { get; init; }
+    /// <summary>Hub mode: the hub's target id in the app (for example auth_secretkeeper). The QR becomes
+    /// target=&lt;hub&gt;&amp;destination=&lt;Id&gt;; the hub relays the app's envelopes to this server's login route.</summary>
+    public string? Hub { get; init; }
     /// <summary>Public origin of the service for GET target (for example https://api.example.com);
     /// without it, built from the request's Host and X-Forwarded-Proto.</summary>
     public string? PublicUrl { get; init; }
@@ -53,6 +57,7 @@ public sealed class SkLoginServiceOptions<TUser>
         {
             Identity = identity,
             Target = Target.Id,
+            Hub = Target.Hub,
             Access = Access,
             Store = Store,
             Ttl = Ttl,

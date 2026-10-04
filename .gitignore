@@ -7,3 +7,4 @@ artifacts/
 *.swp
 .DS_Store
 examples/AspNetCoreDemo/appsettings.Development.json
+.cursor/

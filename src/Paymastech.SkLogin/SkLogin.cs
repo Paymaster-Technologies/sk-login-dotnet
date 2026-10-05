@@ -68,6 +68,10 @@ public sealed class SkLoginOptions<TUser>
     /// carries target=&lt;hub&gt;&amp;destination=&lt;Target&gt;, the app sends envelopes through the hub and
     /// the hub relays them to this server. The inner envelope and its meta do not change.</summary>
     public string? Hub { get; init; }
+    /// <summary>sk1… address of the person who owns this service (their Secret Keeper app). Only its
+    /// hash is published by GET target as ownerHash: the hub catalog lets exactly this address register
+    /// and edit the service entry after signing in to the catalog.</summary>
+    public string? Owner { get; init; }
     public required AccessDecider<TUser> Access { get; init; }
     public IPendingStore<TUser>? Store { get; init; }
     public TimeSpan Ttl { get; init; } = SkLogin.DefaultSidTtl;
@@ -111,6 +115,15 @@ public static class SkLogin
         return JsonSerializer.Serialize(new Dictionary<string, object> { ["type"] = type, ["data"] = data });
     }
 
+    /// <summary>Hash of an owner address as published in GET target (ownerHash): base64url of SHA-256 over
+    /// the address text, no padding. Same as ownerHash() in the Node core: the hub catalog compares it with
+    /// the hash of the signed-in address, the address itself stays private.</summary>
+    public static string OwnerHash(string address)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(address));
+        return Convert.ToBase64String(hash).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
     public static string StateName(PendingState state) => state switch
     {
         PendingState.New => "new",
@@ -139,6 +152,10 @@ public sealed class SkLogin<TUser>
     public string Target { get; }
     /// <summary>Hub target id in hub mode, otherwise null.</summary>
     public string? Hub { get; }
+    /// <summary>Owner address when configured, otherwise null.</summary>
+    public string? Owner { get; }
+    /// <summary>What GET target publishes for the owner: <see cref="SkLogin.OwnerHash"/> of <see cref="Owner"/>, or null.</summary>
+    public string? OwnerHash => Owner is null ? null : SkLogin.OwnerHash(Owner);
     public TimeSpan Ttl { get; }
     public string ServerAddress => _identity.Address;
     public IReadOnlyDictionary<Lang, Messages> Messages => _messages;
@@ -148,6 +165,7 @@ public sealed class SkLogin<TUser>
         _identity = options.Identity;
         Target = options.Target;
         Hub = string.IsNullOrEmpty(options.Hub) ? null : options.Hub;
+        Owner = string.IsNullOrEmpty(options.Owner) ? null : options.Owner;
         _access = options.Access;
         Ttl = options.Ttl;
         _now = options.Now ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());

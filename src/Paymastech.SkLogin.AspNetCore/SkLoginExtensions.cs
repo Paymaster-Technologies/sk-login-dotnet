@@ -131,6 +131,7 @@ public static class SkLoginEndpointRouteBuilderExtensions
                 ["checkDigits"] = t.CheckDigits,
             };
             if (t.Hub is not null) body["hub"] = t.Hub;
+            if (t.OwnerHash is not null) body["ownerHash"] = t.OwnerHash;
             return Results.Json(body, Json);
         });
 

@@ -9,7 +9,13 @@ browser widget and the Secret Keeper app talk to.
 builder.Services.AddSkLogin<User>(o =>
 {
     o.Mnemonic = builder.Configuration["SK_SERVER_MNEMONIC"];
-    o.Target = new SkLoginTarget { Id = "my-service", PublicUrl = "https://api.example.com" };
+    o.Target = new SkLoginTarget
+    {
+        Id = "my-service",                                  // destination in the hub catalog
+        Hub = "auth_secretkeeper",                          // the hub's target id in the app
+        Owner = builder.Configuration["SK_OWNER_ADDRESS"],  // your own sk1… address: registers the service in the catalog
+        PublicUrl = "https://api.example.com",
+    };
     o.Access = async address =>
     {
         var user = await users.FindByAddressAsync(address);

@@ -75,6 +75,26 @@ public class LoginTests
     }
 
     [Fact]
+    public void OwnerHashMatchesTheNodeCore()
+    {
+        // createHash('sha256').update(address).digest('base64url') in @paymastech/sk-login-core.
+        const string address = "sk1j5lsgzk3n2uvempjujk25xeqyx0nsch2k0tg2emg4hmcas4e659sqtsjdc";
+        Assert.Equal("1swWNOJZa6nJmVMF7Rp-9Vm0osgDAiCVkcxJGLTwxxI", SkLogin.OwnerHash(address));
+
+        var withOwner = new SkLogin<string>(new SkLoginOptions<string>
+        {
+            Identity = _server,
+            Target = Target,
+            Owner = address,
+            Access = a => ValueTask.FromResult(AccessDecision<string>.Granted(a)),
+        });
+        Assert.Equal(address, withOwner.Owner);
+        Assert.Equal(SkLogin.OwnerHash(address), withOwner.OwnerHash);
+        Assert.Null(Login().Owner);
+        Assert.Null(Login().OwnerHash);
+    }
+
+    [Fact]
     public async Task IssuesPayloadTheAppCanParse()
     {
         var login = Login();

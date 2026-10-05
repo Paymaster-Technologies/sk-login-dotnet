@@ -34,6 +34,8 @@ builder.Services.AddSkLogin<User>(o =>
     {
         Id = Environment.GetEnvironmentVariable("SK_TARGET") ?? "demo",
         Hub = Environment.GetEnvironmentVariable("SK_HUB"),
+        // SK_OWNER_ADDRESS: your own sk1… address; its hash in GET target lets you register the service in the hub catalog.
+        Owner = Environment.GetEnvironmentVariable("SK_OWNER_ADDRESS"),
     };
     // The demo admits everyone: a real service would look up the user by sk1… address, check an allowlist or link to an account here.
     o.Access = address => ValueTask.FromResult(AccessDecision<User>.Granted(new User(address)));

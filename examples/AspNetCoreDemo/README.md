@@ -8,6 +8,7 @@ dotnet run --project examples/AspNetCoreDemo                 # random mnemonic, 
 dotnet run --project examples/AspNetCoreDemo -- --mnemonic   # print a new mnemonic
 SK_SERVER_MNEMONIC="…" SK_TARGET=my-service dotnet run --project examples/AspNetCoreDemo
 SK_TARGET=my-service SK_HUB=auth_secretkeeper dotnet run --project examples/AspNetCoreDemo   # QR in hub mode, see README "Hub"
+SK_OWNER_ADDRESS=sk1… SK_TARGET=my-service SK_HUB=auth_secretkeeper dotnet run --project examples/AspNetCoreDemo   # plus ownerHash in GET target for the hub catalog
 ```
 
 Phone emulation for development without the app:

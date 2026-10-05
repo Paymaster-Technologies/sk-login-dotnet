@@ -20,6 +20,9 @@ public sealed class SkLoginTarget
     /// <summary>Hub mode: the hub's target id in the app (for example auth_secretkeeper). The QR becomes
     /// target=&lt;hub&gt;&amp;destination=&lt;Id&gt;; the hub relays the app's envelopes to this server's login route.</summary>
     public string? Hub { get; init; }
+    /// <summary>sk1… address of the service owner (their Secret Keeper app). Only its hash goes to GET target
+    /// as ownerHash; the hub catalog lets this address register and manage the service entry. Not a secret.</summary>
+    public string? Owner { get; init; }
     /// <summary>Public origin of the service for GET target (for example https://api.example.com);
     /// without it, built from the request's Host and X-Forwarded-Proto.</summary>
     public string? PublicUrl { get; init; }
@@ -58,6 +61,7 @@ public sealed class SkLoginServiceOptions<TUser>
             Identity = identity,
             Target = Target.Id,
             Hub = Target.Hub,
+            Owner = Target.Owner,
             Access = Access,
             Store = Store,
             Ttl = Ttl,

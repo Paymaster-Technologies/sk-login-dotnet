@@ -36,7 +36,13 @@ using Paymastech.SkLogin.AspNetCore;
 builder.Services.AddSkLogin<User>(o =>
 {
     o.Mnemonic = builder.Configuration["SK_SERVER_MNEMONIC"];   // 12 BIP-39 words, see "Secrets"
-    o.Target = new SkLoginTarget { Id = "my-service", Hub = "auth_secretkeeper", PublicUrl = "https://api.example.com" };
+    o.Target = new SkLoginTarget
+    {
+        Id = "my-service",                                  // destination in the hub catalog
+        Hub = "auth_secretkeeper",                          // the hub's target id in the app
+        Owner = builder.Configuration["SK_OWNER_ADDRESS"],  // your own sk1… address, see "Onboarding"
+        PublicUrl = "https://api.example.com",
+    };
     // Who gets in: called once after confirmation, receives the sk1… address
     o.Access = async address =>
     {
@@ -96,24 +102,30 @@ Steps for the hub mode:
 1. Generate a server mnemonic (once, keep it as a secret):
    `string.Join(' ', Identity.GenerateMnemonic())` or from the demo:
    `dotnet run --project examples/AspNetCoreDemo -- --mnemonic`.
-2. Run the service with `Target = new SkLoginTarget { Id = "<destination>", Hub = "auth_secretkeeper", PublicUrl = … }`.
+2. Run the service with `Target = new SkLoginTarget { Id = "<destination>", Hub = "auth_secretkeeper", Owner = "<sk1…>", PublicUrl = … }`.
    `Id` is the short Latin name you want in the registry (`[a-z0-9_-]{1,32}`),
    `Hub` is the hub's target id in the app (`auth_secretkeeper` in
-   production; the Secret Keeper team may give you a staging one).
+   production; the Secret Keeper team may give you a staging one), `Owner`
+   is the `sk1…` address of your own Secret Keeper app (Settings, address).
 3. Open `GET <PublicUrl>/api/sk/target`: it returns `id`, `hub`, `url`
-   (your `login` endpoint), `serverAddress` (`sk1…`) and `checkDigits` for
-   verification by voice.
-4. Hand this JSON plus the display name of your service to the Secret
-   Keeper team; they add the entry to the hub registry. From that moment
-   the sign-in works with the released app.
+   (your `login` endpoint), `serverAddress` (`sk1…`), `checkDigits` for
+   verification by voice and `ownerHash` (the hash of `Owner`; the address
+   itself is not published).
+4. Open the hub (`https://auth.secretkeeper.net/`), sign in with the phone
+   whose address you put into `Owner`, and submit the URL of your service.
+   The catalog fetches `GET target`, checks that `ownerHash` matches the
+   signed-in address and that `hub` names this hub, and creates the
+   registry entry. From that moment the sign-in works with the released
+   app; the app shows your host name until the hub owner approves the
+   display name you propose in the catalog.
 5. The `login` endpoint must be reachable from the internet over HTTPS: it
    is called by the hub, not by the browser.
-6. If `serverAddress` changes (new mnemonic), tell the team to update the
-   registry entry: envelopes are encrypted to this address.
+6. If `serverAddress` changes (a new mnemonic), press "Re-check" on your
+   entry in the catalog: envelopes are encrypted to this address.
 
-In the direct mode steps 2-4 differ: run without `Hub`, and the team adds
-the target to the app and ships a release; until then, sign-in is tested
-with the phone emulation (see the demo, `DEMO_FAKE_PHONE=1`).
+In the direct mode steps 2-4 differ: run without `Hub` and `Owner`, and
+the team adds the target to the app and ships a release; until then,
+sign-in is tested with the phone emulation (see the demo, `DEMO_FAKE_PHONE=1`).
 
 ## Hub
 
@@ -133,13 +145,23 @@ The hub also serves the browser widget, so you do not have to host it:
 <script src="https://auth.secretkeeper.net/widget.js"></script>
 ```
 
+The hub keeps a catalog of registered services. Service owners sign in to
+the catalog with Secret Keeper and register their service by URL (see the
+checklist above); the hub owner moderates display names and can block an
+entry. The entry is public at `GET <hub>/targets/<destination>`.
+
 ## Secrets and environment
 
-`SK_SERVER_MNEMONIC`: 12 words. The server keys are derived from it. A leak
-means the ability to impersonate the service to the app. Keep it in a secret
-manager / user-secrets, never log it. Instead of a mnemonic you can pass a
-ready `Identity` (`Identity.DeriveIdentityKeys`). The module makes no network
-calls: everything happens between your server, the browser and the user's phone.
+- `SK_SERVER_MNEMONIC`: 12 words. The server keys are derived from it. A
+  leak means the ability to impersonate the service to the app. Keep it in
+  a secret manager / user-secrets, never log it. Instead of a mnemonic you
+  can pass a ready `Identity` (`Identity.DeriveIdentityKeys`).
+- `SK_OWNER_ADDRESS` (suggested name): the `sk1…` address of your own
+  Secret Keeper app, passed as `Target.Owner`. Not a secret, but only its
+  hash is published; it is what lets you manage the service entry in the
+  hub catalog.
+- The module makes no network calls: everything happens between your
+  server, the browser and the user's phone.
 
 ## HTTP API
 
@@ -152,7 +174,7 @@ The default prefix is `/api/sk`. Browser routes: `init`, `status`,
 | `POST login` | app | `text/plain`, envelope | challenge envelope as `text/plain` (for `sk-login`), `{ sent: true }` (for `sk-login-code`), `204` (for `sk-login-cancel`) or `4xx { error, message }` |
 | `GET status?sid=` | browser | | `{ state, reason?, ...extra }`, `state`: `new`, `challenged`, `authenticated`, `denied`, `cancelled`, `expired` |
 | `POST code` | browser | `{ sid, code }` | `{ ok: true, ...extra }`, `403 { denied, reason, message }` or `4xx { error, message }` |
-| `GET target` | people | | `{ id, hub?, v, url, serverAddress, checkDigits }` |
+| `GET target` | people | | `{ id, hub?, v, url, serverAddress, checkDigits, ownerHash? }` |
 
 | `error` code | Status | When |
 | --- | --- | --- |
@@ -174,6 +196,7 @@ calls for that sid answer `expired`.
 | `Mnemonic` or `Identity` | one is required | server identity |
 | `Target.Id` | required | service id: the hub `destination` (hub mode) or the entry in the app's target list (direct mode) |
 | `Target.Hub` | | hub target id (e.g. `auth_secretkeeper`); switches the QR to `target=<hub>&destination=<id>` |
+| `Target.Owner` | | `sk1…` address of the service owner; published as `ownerHash` in `GET target`, lets this address manage the entry in the hub catalog |
 | `Target.PublicUrl` | from `Host` and `X-Forwarded-Proto` | origin for `GET target` |
 | `Access(address)` | required | `AccessDecision<T>.Granted(user)` or `.Denied(reason, message?)` |
 | `OnAuthenticated(user, HttpContext)` | | session, cookie, token; the return value goes into the JSON for the browser |
@@ -213,7 +236,7 @@ is `SET sid json PX ttl`.
 ## Development
 
 ```bash
-dotnet test                                   # 31 tests: app vectors, protocol, HTTP
+dotnet test                                   # 33 tests: app vectors, protocol, HTTP
 dotnet run --project examples/AspNetCoreDemo  # http://localhost:5000, random mnemonic
 DEMO_FAKE_PHONE=1 dotnet run --project examples/AspNetCoreDemo   # plus POST /demo/phone?sid=…
 dotnet pack -c Release -o ./artifacts

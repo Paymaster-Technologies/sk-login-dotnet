@@ -20,6 +20,7 @@ public sealed class AspNetCoreTests : IAsyncLifetime
     private HttpClient _client = null!;
     private SkLoginService<User> _sk = null!;
     private readonly HashSet<string> _blocked = new();
+    private const string Owner = "sk1j5lsgzk3n2uvempjujk25xeqyx0nsch2k0tg2emg4hmcas4e659sqtsjdc";
 
     public async Task InitializeAsync()
     {
@@ -30,7 +31,7 @@ public sealed class AspNetCoreTests : IAsyncLifetime
                 services.AddSkLogin<User>(o =>
                 {
                     o.Mnemonic = string.Join(' ', Identity.GenerateMnemonic());
-                    o.Target = new SkLoginTarget { Id = "demo", PublicUrl = "https://api.example.com/" };
+                    o.Target = new SkLoginTarget { Id = "demo", PublicUrl = "https://api.example.com/", Owner = Owner };
                     o.Access = address => ValueTask.FromResult(_blocked.Contains(address)
                         ? AccessDecision<User>.Denied("blocked")
                         : AccessDecision<User>.Granted(new User(address, "Ann")));
@@ -75,6 +76,9 @@ public sealed class AspNetCoreTests : IAsyncLifetime
         Assert.Equal("https://api.example.com/auth/sk/login", t.GetProperty("url").GetString());
         Assert.Equal(_sk.ServerAddress, t.GetProperty("serverAddress").GetString());
         Assert.Matches(@"^\d{5}( \d{5}){4}$", t.GetProperty("checkDigits").GetString());
+        // Only the hash of the owner address is published; the hub catalog compares it with the signed-in address.
+        Assert.Equal(SkLogin.OwnerHash(Owner), t.GetProperty("ownerHash").GetString());
+        Assert.False(t.TryGetProperty("hub", out _));
     }
 
     [Fact]

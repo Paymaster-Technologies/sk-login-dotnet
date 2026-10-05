@@ -11,7 +11,8 @@ namespace Paymastech.SkLogin.AspNetCore;
 /// <param name="ServerAddress">sk1… address of the server identity.</param>
 /// <param name="CheckDigits">Check digits of the address for visual comparison.</param>
 /// <param name="Hub">Hub target id in hub mode, otherwise null (omitted from JSON).</param>
-public sealed record TargetInfo(string Id, int V, string Url, string ServerAddress, string CheckDigits, string? Hub = null);
+/// <param name="OwnerHash">Hash of the owner address when Owner is configured, otherwise null (omitted from JSON).</param>
+public sealed record TargetInfo(string Id, int V, string Url, string ServerAddress, string CheckDigits, string? Hub = null, string? OwnerHash = null);
 
 /// <summary>
 /// Core wrapper for ASP.NET Core: request context from HttpContext, QR for the
@@ -56,7 +57,7 @@ public sealed class SkLoginService<TUser>
 
     /// <summary>Target parameters to be recorded in the Secret Keeper app.</summary>
     public TargetInfo Target(string loginUrl) =>
-        new(Options.Target!.Id, SkLogin.Version, loginUrl, ServerAddress, Identity.KeyCheckDigits(Core_X25519Public()), Options.Target.Hub);
+        new(Options.Target!.Id, SkLogin.Version, loginUrl, ServerAddress, Identity.KeyCheckDigits(Core_X25519Public()), Options.Target.Hub, Core.OwnerHash);
 
     private byte[] Core_X25519Public() => Identity.DecodeIdentityAddress(ServerAddress);
 

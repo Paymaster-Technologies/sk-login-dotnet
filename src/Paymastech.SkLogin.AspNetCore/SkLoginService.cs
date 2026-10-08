@@ -4,15 +4,15 @@ using QRCoder;
 
 namespace Paymastech.SkLogin.AspNetCore;
 
-/// <summary>What GET target returns: the entry for the Secret Keeper app or the hub registry.</summary>
-/// <param name="Id">Service id (target in direct mode, destination in hub mode).</param>
+/// <summary>What GET target returns: a public description of the service. The protocol does not need it
+/// (the app takes the host and the server address from the QR); it is for people and tooling.</summary>
+/// <param name="Id">Service id: the site host or the embedded target id; what meta.data.target carries.</param>
+/// <param name="Site">The site host when configured with Site, otherwise null (omitted from JSON).</param>
 /// <param name="V">Protocol version.</param>
-/// <param name="Url">Login endpoint URL the app (or the hub) posts envelopes to.</param>
+/// <param name="Url">Login endpoint URL the app posts envelopes to.</param>
 /// <param name="ServerAddress">sk1… address of the server identity.</param>
 /// <param name="CheckDigits">Check digits of the address for visual comparison.</param>
-/// <param name="Hub">Hub target id in hub mode, otherwise null (omitted from JSON).</param>
-/// <param name="OwnerHash">Hash of the owner address when Owner is configured, otherwise null (omitted from JSON).</param>
-public sealed record TargetInfo(string Id, int V, string Url, string ServerAddress, string CheckDigits, string? Hub = null, string? OwnerHash = null);
+public sealed record TargetInfo(string Id, string? Site, int V, string Url, string ServerAddress, string CheckDigits);
 
 /// <summary>
 /// Core wrapper for ASP.NET Core: request context from HttpContext, QR for the
@@ -55,9 +55,9 @@ public sealed class SkLoginService<TUser>
     public Task<TUser> SubmitCodeAsync(string sid, string code, Lang lang, CancellationToken ct = default) => Core.SubmitCodeAsync(sid, code, lang, ct);
     public Task<PollResult<TUser>> PollAsync(string sid, CancellationToken ct = default) => Core.PollAsync(sid, ct);
 
-    /// <summary>Target parameters to be recorded in the Secret Keeper app.</summary>
+    /// <summary>Public description of the service for GET target.</summary>
     public TargetInfo Target(string loginUrl) =>
-        new(Options.Target!.Id, SkLogin.Version, loginUrl, ServerAddress, Identity.KeyCheckDigits(Core_X25519Public()), Options.Target.Hub, Core.OwnerHash);
+        new(Core.Target, Core.Site, SkLogin.Version, loginUrl, ServerAddress, Identity.KeyCheckDigits(Core_X25519Public()));
 
     private byte[] Core_X25519Public() => Identity.DecodeIdentityAddress(ServerAddress);
 

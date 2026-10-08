@@ -44,37 +44,22 @@ public static class SkLoginEndpointRouteBuilderExtensions
     };
 
     /// <summary>
-    /// The five Secret Keeper sign-in routes under <paramref name="prefix"/>:
-    /// POST init, POST login (text/plain, called by the app), GET status?sid=,
-    /// POST code {sid, code}, GET target.
+    /// The Secret Keeper sign-in routes. For the app: POST /sk/login (text/plain envelopes; the app builds
+    /// this URL from the site host in the QR, so it is mapped at the root regardless of
+    /// <paramref name="prefix"/>). For the browser, under <paramref name="prefix"/>: POST init,
+    /// GET status?sid=, POST code {sid, code}, GET target; POST login there is an alias of /sk/login
+    /// for older app builds that know the service by an embedded id (see SkLoginTarget.LegacyTargets).
+    /// The returned group holds the prefixed routes only.
     /// </summary>
     public static RouteGroupBuilder MapSkLogin<TUser>(this IEndpointRouteBuilder endpoints, string prefix = DefaultPrefix)
     {
         var group = endpoints.MapGroup(prefix.TrimEnd('/'));
 
+        endpoints.MapPost(SkLogin.LoginPath, LoginAsync<TUser>);
+        group.MapPost("/login", LoginAsync<TUser>);
+
         group.MapPost("/init", async (HttpContext http, SkLoginService<TUser> sk, CancellationToken ct) =>
             Results.Json(await sk.InitAsync(http, ct), Json));
-
-        group.MapPost("/login", async (HttpContext http, SkLoginService<TUser> sk, CancellationToken ct) =>
-        {
-            var body = await ReadBodyAsync(http.Request, sk.Options.MaxBodyBytes, ct);
-            if (body is null) return Error(413, "bad-envelope", "envelope is too large");
-            var lang = Messages.LangFromAcceptLanguage(http.Request.Headers.AcceptLanguage.ToString());
-            try
-            {
-                var reply = await sk.HandleEnvelopeAsync(body, lang, ct);
-                return reply switch
-                {
-                    EnvelopeReply.Challenge c => Results.Text(c.Armored, "text/plain", Encoding.UTF8),
-                    EnvelopeReply.CodeAccepted => Results.Json(new { sent = true }, Json),
-                    _ => Results.NoContent(),
-                };
-            }
-            catch (LoginException e)
-            {
-                return Error(e.Status, e.Code, e.Message);
-            }
-        });
 
         group.MapGet("/status", async (HttpContext http, SkLoginService<TUser> sk, string? sid, CancellationToken ct) =>
         {
@@ -120,22 +105,39 @@ public static class SkLoginEndpointRouteBuilderExtensions
         group.MapGet("/target", (HttpContext http, SkLoginService<TUser> sk) =>
         {
             var origin = sk.Options.Target!.PublicUrl?.TrimEnd('/') ?? OriginOf(http.Request);
-            var loginUrl = $"{origin}{prefix.TrimEnd('/')}/login";
-            var t = sk.Target(loginUrl);
-            var body = new Dictionary<string, object?>
-            {
-                ["id"] = t.Id,
-                ["v"] = t.V,
-                ["url"] = t.Url,
-                ["serverAddress"] = t.ServerAddress,
-                ["checkDigits"] = t.CheckDigits,
-            };
-            if (t.Hub is not null) body["hub"] = t.Hub;
-            if (t.OwnerHash is not null) body["ownerHash"] = t.OwnerHash;
+            var t = sk.Target($"{origin}{SkLogin.LoginPath}");
+            var body = new Dictionary<string, object?> { ["id"] = t.Id };
+            if (t.Site is not null) body["site"] = t.Site;
+            body["v"] = t.V;
+            body["url"] = t.Url;
+            body["serverAddress"] = t.ServerAddress;
+            body["checkDigits"] = t.CheckDigits;
             return Results.Json(body, Json);
         });
 
         return group;
+    }
+
+    /// <summary>An envelope from the app: challenge as text/plain, {sent: true} for a code, 204 for a cancel.</summary>
+    private static async Task<IResult> LoginAsync<TUser>(HttpContext http, SkLoginService<TUser> sk, CancellationToken ct)
+    {
+        var body = await ReadBodyAsync(http.Request, sk.Options.MaxBodyBytes, ct);
+        if (body is null) return Error(413, "bad-envelope", "envelope is too large");
+        var lang = Messages.LangFromAcceptLanguage(http.Request.Headers.AcceptLanguage.ToString());
+        try
+        {
+            var reply = await sk.HandleEnvelopeAsync(body, lang, ct);
+            return reply switch
+            {
+                EnvelopeReply.Challenge c => Results.Text(c.Armored, "text/plain", Encoding.UTF8),
+                EnvelopeReply.CodeAccepted => Results.Json(new { sent = true }, Json),
+                _ => Results.NoContent(),
+            };
+        }
+        catch (LoginException e)
+        {
+            return Error(e.Status, e.Code, e.Message);
+        }
     }
 
     private sealed record CodeRequest(string? Sid, string? Code);

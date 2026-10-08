@@ -1,5 +1,6 @@
-// Minimal ASP.NET Core app with Secret Keeper sign-in: routes under /api/sk,
-// a page with the widget at /, a cookie session, and /me that reads it.
+// Minimal ASP.NET Core app with Secret Keeper sign-in: /sk/login for the app,
+// browser routes under /api/sk, a page with the widget at /, a cookie session,
+// and /me that reads it.
 //
 //   SK_SERVER_MNEMONIC="word1 … word12" dotnet run --project examples/AspNetCoreDemo
 //
@@ -29,14 +30,10 @@ var sessions = new ConcurrentDictionary<string, User>();
 builder.Services.AddSkLogin<User>(o =>
 {
     o.Mnemonic = mnemonic;
-    // SK_HUB=auth_secretkeeper switches the QR to hub mode (see README, "Hub").
-    o.Target = new SkLoginTarget
-    {
-        Id = Environment.GetEnvironmentVariable("SK_TARGET") ?? "demo",
-        Hub = Environment.GetEnvironmentVariable("SK_HUB"),
-        // SK_OWNER_ADDRESS: your own sk1… address; its hash in GET target lets you register the service in the hub catalog.
-        Owner = Environment.GetEnvironmentVariable("SK_OWNER_ADDRESS"),
-    };
+    // SK_SITE: the public host of this site; the QR carries it with the server address and the app
+    // posts envelopes to https://<host>/sk/login. The demo host is a placeholder: a real phone cannot
+    // reach it, use DEMO_FAKE_PHONE=1 or run the demo on a public HTTPS host.
+    o.Target = new SkLoginTarget { Site = Environment.GetEnvironmentVariable("SK_SITE") ?? "demo.example" };
     // The demo admits everyone: a real service would look up the user by sk1… address, check an allowlist or link to an account here.
     o.Access = address => ValueTask.FromResult(AccessDecision<User>.Granted(new User(address)));
     // The browser learned about admission: issue a cookie session. The return value goes into the JSON (the widget passes it to onSuccess).
@@ -76,7 +73,7 @@ if (Environment.GetEnvironmentVariable("DEMO_FAKE_PHONE") is not null)
     var phone = Identity.DeriveIdentityKeys(Identity.GenerateMnemonic());
     app.MapPost("/demo/phone", async (string sid, string? show, string? cancel, SkLoginService<User> sk) =>
     {
-        var target = sk.Options.Target!.Id;
+        var target = sk.Core.Target;
         string Env(string type, string text = "", int challenge = 1) => Envelope.Encrypt(phone, sk.ServerAddress, text, SkLogin.LoginMeta(target, type, sid, challenge));
         try
         {
@@ -103,7 +100,7 @@ if (Environment.GetEnvironmentVariable("DEMO_FAKE_PHONE") is not null)
 }
 
 app.Lifetime.ApplicationStarted.Register(() =>
-    Console.WriteLine($"demo: {app.Urls.FirstOrDefault() ?? "http://localhost:5000"}/  target: /api/sk/target"));
+    Console.WriteLine($"demo: {app.Urls.FirstOrDefault() ?? "http://localhost:5000"}/  site: {app.Services.GetRequiredService<SkLoginService<User>>().Core.Target}  target: /api/sk/target"));
 app.Run();
 
 record User(string Address);

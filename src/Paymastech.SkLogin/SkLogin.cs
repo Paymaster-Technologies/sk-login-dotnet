@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Paymastech.SkLogin.Crypto;
 
 namespace Paymastech.SkLogin;
@@ -59,19 +60,18 @@ public delegate ValueTask<AccessDecision<TUser>> AccessDecider<TUser>(string add
 
 public sealed class SkLoginOptions<TUser>
 {
-    /// <summary>Server identity; its sk1… address is recorded in the app's target list.</summary>
+    /// <summary>Server identity; its sk1… address goes into the QR next to the site host.</summary>
     public required IdentityKeys Identity { get; init; }
-    /// <summary>Target id: the service id in the app's skLoginTargets (direct mode) or its
-    /// destination in the hub registry (hub mode). Envelopes with another target are rejected.</summary>
-    public required string Target { get; init; }
-    /// <summary>Hub mode: the hub's target id in the app (for example auth_secretkeeper). The QR then
-    /// carries target=&lt;hub&gt;&amp;destination=&lt;Target&gt;, the app sends envelopes through the hub and
-    /// the hub relays them to this server. The inner envelope and its meta do not change.</summary>
-    public string? Hub { get; init; }
-    /// <summary>sk1… address of the person who owns this service (their Secret Keeper app). Only its
-    /// hash is published by GET target as ownerHash: the hub catalog lets exactly this address register
-    /// and edit the service entry after signing in to the catalog.</summary>
-    public string? Owner { get; init; }
+    /// <summary>The site's host (for example api.example.com): the QR carries site=&lt;host&gt;&amp;address=&lt;sk1…&gt;,
+    /// the app derives the login endpoint https://&lt;host&gt;/sk/login from it and names the service by it.
+    /// Lower-cased; must be a bare ASCII host (<see cref="SkLogin.SiteHostRegex"/>). Exactly one of Site and Target.</summary>
+    public string? Site { get; init; }
+    /// <summary>An embedded target id instead of a site: an app that Secret Keeper knows by name
+    /// (its URL and server address are built in). Exactly one of Site and Target.</summary>
+    public string? Target { get; init; }
+    /// <summary>Other meta.data.target values to accept for a while, for example the embedded id a site had
+    /// before it moved to Site (older app builds still send it).</summary>
+    public IReadOnlyCollection<string>? LegacyTargets { get; init; }
     public required AccessDecider<TUser> Access { get; init; }
     public IPendingStore<TUser>? Store { get; init; }
     public TimeSpan Ttl { get; init; } = SkLogin.DefaultSidTtl;
@@ -103,6 +103,12 @@ public static class SkLogin
     public const int Version = 1;
     public const string AuthUrl = "https://secretkeeper.net/auth";
     public const string AuthSchemeUrl = "sk://auth";
+    /// <summary>Path the app posts login envelopes to, below the site host from the QR.</summary>
+    public const string LoginPath = "/sk/login";
+    /// <summary>The host form the app accepts in site (lib/services/sk_login.dart): ASCII labels of letters,
+    /// digits and hyphens, at least one dot, no scheme, port or path; IP literals and localhost are not
+    /// services. IDN hosts go in punycode.</summary>
+    public static readonly Regex SiteHostRegex = new(@"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$", RegexOptions.Compiled);
     public static readonly TimeSpan DefaultSidTtl = TimeSpan.FromMinutes(2);
     public const int MaxCodeAttempts = 5;
     internal const int CodeLength = 6;
@@ -113,15 +119,6 @@ public static class SkLogin
         var data = new Dictionary<string, object> { ["target"] = target, ["v"] = Version, ["sid"] = sid };
         if (challenge > Context.ChallengeV1) data["challenge"] = challenge;
         return JsonSerializer.Serialize(new Dictionary<string, object> { ["type"] = type, ["data"] = data });
-    }
-
-    /// <summary>Hash of an owner address as published in GET target (ownerHash): base64url of SHA-256 over
-    /// the address text, no padding. Same as ownerHash() in the Node core: the hub catalog compares it with
-    /// the hash of the signed-in address, the address itself stays private.</summary>
-    public static string OwnerHash(string address)
-    {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(address));
-        return Convert.ToBase64String(hash).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 
     public static string StateName(PendingState state) => state switch
@@ -148,24 +145,29 @@ public sealed class SkLogin<TUser>
     private readonly Describe _describe;
     private readonly Func<long> _now;
     private readonly Dictionary<Lang, Messages> _messages;
+    private readonly HashSet<string> _accepted;
 
+    /// <summary>The service id every envelope's meta.data.target must carry: the site host or the embedded id.</summary>
     public string Target { get; }
-    /// <summary>Hub target id in hub mode, otherwise null.</summary>
-    public string? Hub { get; }
-    /// <summary>Owner address when configured, otherwise null.</summary>
-    public string? Owner { get; }
-    /// <summary>What GET target publishes for the owner: <see cref="SkLogin.OwnerHash"/> of <see cref="Owner"/>, or null.</summary>
-    public string? OwnerHash => Owner is null ? null : SkLogin.OwnerHash(Owner);
+    /// <summary>The site host when configured with Site, otherwise null (embedded target).</summary>
+    public string? Site { get; }
     public TimeSpan Ttl { get; }
     public string ServerAddress => _identity.Address;
     public IReadOnlyDictionary<Lang, Messages> Messages => _messages;
 
+    /// <exception cref="ArgumentException">neither or both of Site and Target are set, or Site is not a bare host</exception>
     public SkLogin(SkLoginOptions<TUser> options)
     {
         _identity = options.Identity;
-        Target = options.Target;
-        Hub = string.IsNullOrEmpty(options.Hub) ? null : options.Hub;
-        Owner = string.IsNullOrEmpty(options.Owner) ? null : options.Owner;
+        var site = options.Site?.Trim().ToLowerInvariant();
+        var target = options.Target?.Trim();
+        if (string.IsNullOrEmpty(site) == string.IsNullOrEmpty(target))
+            throw new ArgumentException("SkLogin: set exactly one of Site (the host) or Target (an embedded id)", nameof(options));
+        if (!string.IsNullOrEmpty(site) && !SkLogin.SiteHostRegex.IsMatch(site))
+            throw new ArgumentException($"SkLogin: Site must be a bare ASCII host (no scheme, port or path; IDN in punycode), got \"{options.Site}\"", nameof(options));
+        Site = string.IsNullOrEmpty(site) ? null : site;
+        Target = Site ?? target!;
+        _accepted = new HashSet<string>(options.LegacyTargets ?? Array.Empty<string>()) { Target };
         _access = options.Access;
         Ttl = options.Ttl;
         _now = options.Now ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -186,11 +188,14 @@ public sealed class SkLogin<TUser>
         var createdAt = _now();
         var expiresAt = createdAt + (long)Ttl.TotalMilliseconds;
         await SaveAsync(new Pending<TUser> { Sid = sid, CreatedAt = createdAt, ExpiresAt = expiresAt, State = PendingState.New, Ctx = ctx }, ct);
-        var query = Hub is null
+        var query = Site is null
             ? $"v={SkLogin.Version}&sid={Uri.EscapeDataString(sid)}&target={Uri.EscapeDataString(Target)}"
-            : $"v={SkLogin.Version}&sid={Uri.EscapeDataString(sid)}&target={Uri.EscapeDataString(Hub)}&destination={Uri.EscapeDataString(Target)}";
+            : $"v={SkLogin.Version}&sid={Uri.EscapeDataString(sid)}&site={Uri.EscapeDataString(Site)}&address={Uri.EscapeDataString(ServerAddress)}";
         return new InitResult(sid, $"{SkLogin.AuthUrl}?{query}", $"{SkLogin.AuthSchemeUrl}?{query}", expiresAt, (long)Ttl.TotalMilliseconds);
     }
+
+    /// <summary>meta.data.target of an incoming envelope is for this service (Target or one of LegacyTargets).</summary>
+    public bool Accepts(string? target) => target is not null && _accepted.Contains(target);
 
     /// <summary>Steps 3-4: an envelope from the app (request, code or cancel). <paramref name="lang"/>: language of the refusal message.</summary>
     /// <exception cref="LoginException">status, code and message for the JSON error</exception>
@@ -355,7 +360,7 @@ public sealed class SkLogin<TUser>
                 || !root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object
                 || !data.TryGetProperty("sid", out var sid) || sid.ValueKind != JsonValueKind.String)
                 throw new LoginException(400, RefusalCode.BadMeta, "envelope meta lacks type or sid");
-            var targetOk = data.TryGetProperty("target", out var target) && target.ValueKind == JsonValueKind.String && target.GetString() == Target;
+            var targetOk = data.TryGetProperty("target", out var target) && target.ValueKind == JsonValueKind.String && Accepts(target.GetString());
             var versionOk = data.TryGetProperty("v", out var v) && NumberOf(v) == SkLogin.Version;
             if (!targetOk || !versionOk)
                 throw new LoginException(400, RefusalCode.BadMeta, "envelope is meant for another service or protocol version");

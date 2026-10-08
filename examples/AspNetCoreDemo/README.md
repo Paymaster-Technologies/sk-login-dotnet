@@ -6,10 +6,11 @@ a page with a "Sign in" button, an in-memory cookie session, `GET /me`, `GET /lo
 ```bash
 dotnet run --project examples/AspNetCoreDemo                 # random mnemonic, http://localhost:5000
 dotnet run --project examples/AspNetCoreDemo -- --mnemonic   # print a new mnemonic
-SK_SERVER_MNEMONIC="…" SK_TARGET=my-service dotnet run --project examples/AspNetCoreDemo
-SK_TARGET=my-service SK_HUB=auth_secretkeeper dotnet run --project examples/AspNetCoreDemo   # QR in hub mode, see README "Hub"
-SK_OWNER_ADDRESS=sk1… SK_TARGET=my-service SK_HUB=auth_secretkeeper dotnet run --project examples/AspNetCoreDemo   # plus ownerHash in GET target for the hub catalog
+SK_SERVER_MNEMONIC="…" SK_SITE=login.example.com dotnet run --project examples/AspNetCoreDemo   # your public host in the QR
 ```
+
+`SK_SITE` is the host the app will post to (`https://<host>/sk/login`);
+the default `demo.example` is a placeholder for the phone emulation below.
 
 Phone emulation for development without the app:
 
@@ -22,4 +23,5 @@ curl -X POST 'http://localhost:5000/demo/phone?sid=…&cancel=1'  # request + ca
 ```
 
 `wwwroot/sk-login-widget.js` is the built `@paymastech/sk-login-widget`
-from [paymastech/sk-login](https://github.com/paymastech/sk-login).
+(`sk-login-widget.global.js`, 0.5.0) from
+[paymastech/sk-login](https://github.com/paymastech/sk-login).

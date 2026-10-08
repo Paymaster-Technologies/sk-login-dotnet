@@ -42,20 +42,21 @@ file sealed class FakeApp
 
 public class LoginTests
 {
-    public const string Target = "demo";
+    /// <summary>The service is a site: its host is the target id in every envelope.</summary>
+    public const string Target = "demo.example";
 
     private long _now = 1_700_000_000_000;
     private readonly IdentityKeys _server = Identity.DeriveIdentityKeys(Identity.GenerateMnemonic());
 
-    private SkLogin<string> Login(Action<SkLoginOptionsBuilder>? configure = null, string? hub = null)
+    private SkLogin<string> Login(Action<SkLoginOptionsBuilder>? configure = null, IReadOnlyCollection<string>? legacyTargets = null)
     {
         var b = new SkLoginOptionsBuilder();
         configure?.Invoke(b);
         return new SkLogin<string>(new SkLoginOptions<string>
         {
             Identity = _server,
-            Target = Target,
-            Hub = hub,
+            Site = Target,
+            LegacyTargets = legacyTargets,
             Access = b.Access ?? (address => ValueTask.FromResult(AccessDecision<string>.Granted("user:" + address))),
             Ttl = b.Ttl ?? SkLogin.DefaultSidTtl,
             Messages = b.Messages,
@@ -74,25 +75,8 @@ public class LoginTests
         public IPendingStore<string>? Store;
     }
 
-    [Fact]
-    public void OwnerHashMatchesTheNodeCore()
-    {
-        // createHash('sha256').update(address).digest('base64url') in @paymastech/sk-login-core.
-        const string address = "sk1j5lsgzk3n2uvempjujk25xeqyx0nsch2k0tg2emg4hmcas4e659sqtsjdc";
-        Assert.Equal("1swWNOJZa6nJmVMF7Rp-9Vm0osgDAiCVkcxJGLTwxxI", SkLogin.OwnerHash(address));
-
-        var withOwner = new SkLogin<string>(new SkLoginOptions<string>
-        {
-            Identity = _server,
-            Target = Target,
-            Owner = address,
-            Access = a => ValueTask.FromResult(AccessDecision<string>.Granted(a)),
-        });
-        Assert.Equal(address, withOwner.Owner);
-        Assert.Equal(SkLogin.OwnerHash(address), withOwner.OwnerHash);
-        Assert.Null(Login().Owner);
-        Assert.Null(Login().OwnerHash);
-    }
+    private SkLogin<string> With(string? site, string? target, IReadOnlyCollection<string>? legacy = null) =>
+        new(new SkLoginOptions<string> { Identity = _server, Site = site, Target = target, LegacyTargets = legacy, Access = a => ValueTask.FromResult(AccessDecision<string>.Granted(a)) });
 
     [Fact]
     public async Task IssuesPayloadTheAppCanParse()
@@ -101,31 +85,65 @@ public class LoginTests
         var init = await login.InitAsync();
         var uri = new Uri(init.PayloadUrl);
         Assert.Equal("https://secretkeeper.net/auth", uri.GetLeftPart(UriPartial.Path));
-        Assert.Contains($"sid={init.Sid}", init.PayloadUrl);
-        Assert.Contains("target=demo", init.PayloadUrl);
-        Assert.Contains("v=1", init.PayloadUrl);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        Assert.Equal("1", query["v"]);
+        Assert.Equal(init.Sid, query["sid"]);
+        // The site and the server address: the app derives https://demo.example/sk/login and encrypts to the address.
+        Assert.Equal(Target, query["site"]);
+        Assert.Equal(login.ServerAddress, query["address"]);
+        Assert.Null(query["target"]);
         Assert.StartsWith("sk://auth?", init.SchemeUrl);
+        Assert.Equal(init.PayloadUrl.Split('?')[1], init.SchemeUrl.Split('?')[1]);
         Assert.Equal(_now + 120_000, init.ExpiresAt);
         Assert.Equal("new", (await login.PollAsync(init.Sid)).State);
     }
 
     [Fact]
-    public async Task HubModePointsThePayloadAtTheHubAndKeepsEnvelopesUnchanged()
+    public void SiteIsNormalisedAndValidatedLikeTheAppDoes()
     {
-        var login = Login(hub: "auth_secretkeeper");
+        var login = With("  Demo.Example ", null);
+        Assert.Equal("demo.example", login.Site);
+        Assert.Equal("demo.example", login.Target);
+        Assert.Equal("xn--bcher-kva.example", With("xn--bcher-kva.example", null).Target);
+        Assert.Equal("a.b-c.example", With("a.b-c.example", null).Target);
+
+        foreach (var bad in new[] { "demo", "https://demo.example", "demo.example/sk", "demo.example:443", "localhost", "127.0.0.1", "-demo.example", "demo.example.", "b\u00fccher.example", "" })
+            Assert.Contains(bad == "" ? "exactly one of" : "bare ASCII host", Assert.Throws<ArgumentException>(() => With(bad, null)).Message);
+        Assert.Contains("exactly one of", Assert.Throws<ArgumentException>(() => With(null, null)).Message);
+        Assert.Contains("exactly one of", Assert.Throws<ArgumentException>(() => With("demo.example", "demo")).Message);
+    }
+
+    [Fact]
+    public async Task EmbeddedTargetPutsTheIdIntoThePayload()
+    {
+        var login = With(null, "tetatet");
+        Assert.Null(login.Site);
+        Assert.Equal("tetatet", login.Target);
         var init = await login.InitAsync();
         var query = System.Web.HttpUtility.ParseQueryString(new Uri(init.PayloadUrl).Query);
-        Assert.Equal("auth_secretkeeper", query["target"]);
-        Assert.Equal("demo", query["destination"]);
-        Assert.Equal(init.Sid, query["sid"]);
-        // The envelopes the hub relays still carry the service id as target.
-        var app = new FakeApp(login.ServerAddress);
+        Assert.Equal("tetatet", query["target"]);
+        Assert.Null(query["site"]);
+        Assert.Null(query["address"]);
+        var app = new FakeApp(login.ServerAddress, "tetatet");
         Assert.IsType<EnvelopeReply.Challenge>(await login.HandleEnvelopeAsync(app.Request(init.Sid)));
+    }
+
+    [Fact]
+    public async Task LegacyTargetsAreAcceptedInEnvelopesButNotAdvertised()
+    {
+        var login = Login(legacyTargets: new[] { "demo" });
+        Assert.True(login.Accepts("demo"));
+        Assert.True(login.Accepts(Target));
+        Assert.False(login.Accepts("another"));
+        Assert.False(login.Accepts(null));
+        var init = await login.InitAsync();
+        Assert.Contains($"site={Target}", init.PayloadUrl);
+        Assert.DoesNotContain("target=", init.PayloadUrl);
+        // An older app build that knows the service by its embedded id completes the sign-in; the challenge meta keeps the current id.
+        var oldApp = new FakeApp(login.ServerAddress, "demo");
+        var (_, meta) = oldApp.Open(await login.HandleEnvelopeAsync(oldApp.Request(init.Sid)));
+        Assert.Equal(Target, meta.GetProperty("data").GetProperty("target").GetString());
         Assert.Equal("challenged", (await login.PollAsync(init.Sid)).State);
-        // An empty hub means direct mode.
-        var direct = await Login(hub: "").InitAsync();
-        Assert.Contains("target=demo", direct.PayloadUrl);
-        Assert.DoesNotContain("destination", direct.PayloadUrl);
     }
 
     [Fact]
@@ -344,7 +362,7 @@ public class LoginTests
         var noMeta = Envelope.Encrypt(app.Keys, login.ServerAddress, "hi");
         Assert.Equal(RefusalCode.BadMeta, (await Assert.ThrowsAsync<LoginException>(() => login.HandleEnvelopeAsync(noMeta))).Code);
 
-        var badVersion = Envelope.Encrypt(app.Keys, login.ServerAddress, "", "{\"type\":\"sk-login\",\"data\":{\"target\":\"demo\",\"v\":2,\"sid\":\"" + init.Sid + "\"}}");
+        var badVersion = Envelope.Encrypt(app.Keys, login.ServerAddress, "", "{\"type\":\"sk-login\",\"data\":{\"target\":\"" + Target + "\",\"v\":2,\"sid\":\"" + init.Sid + "\"}}");
         Assert.Equal(RefusalCode.BadMeta, (await Assert.ThrowsAsync<LoginException>(() => login.HandleEnvelopeAsync(badVersion))).Code);
 
         var unknownType = Envelope.Encrypt(app.Keys, login.ServerAddress, "", SkLogin.LoginMeta(Target, "sk-data", init.Sid));

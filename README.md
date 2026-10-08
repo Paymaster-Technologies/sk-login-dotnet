@@ -15,7 +15,7 @@ the cryptography is verified against the app with the same test vectors.
 | Package | What it is |
 | --- | --- |
 | [`Paymastech.SkLogin`](src/Paymastech.SkLogin) | The protocol without any web framework dependency: envelope cryptography (X25519, XChaCha20-Poly1305, BIP-39, bech32), requests, challenge code, verification, request store. `net7.0`, `net8.0`. |
-| [`Paymastech.SkLogin.AspNetCore`](src/Paymastech.SkLogin.AspNetCore) | `AddSkLogin` + `MapSkLogin`: five endpoints for the widget and the app, QR as SVG. Minimal APIs, also suitable for apps built on MVC controllers. |
+| [`Paymastech.SkLogin.AspNetCore`](src/Paymastech.SkLogin.AspNetCore) | `AddSkLogin` + `MapSkLogin`: `/sk/login` for the app, four browser endpoints for the widget, QR as SVG. Minimal APIs, also suitable for apps built on MVC controllers. |
 | [`examples/AspNetCoreDemo`](examples/AspNetCoreDemo) | A working application: module + widget + cookie session, plus a phone emulation for development. |
 
 ## Quick start
@@ -38,9 +38,7 @@ builder.Services.AddSkLogin<User>(o =>
     o.Mnemonic = builder.Configuration["SK_SERVER_MNEMONIC"];   // 12 BIP-39 words, see "Secrets"
     o.Target = new SkLoginTarget
     {
-        Id = "my-service",                                  // destination in the hub catalog
-        Hub = "auth_secretkeeper",                          // the hub's target id in the app
-        Owner = builder.Configuration["SK_OWNER_ADDRESS"],  // your own sk1… address, see "Onboarding"
+        Site = "api.example.com",            // your public host: goes into the QR, see "How the app finds your server"
         PublicUrl = "https://api.example.com",
     };
     // Who gets in: called once after confirmation, receives the sk1… address
@@ -58,21 +56,20 @@ builder.Services.AddSkLogin<User>(o =>
 });
 
 var app = builder.Build();
-app.MapSkLogin<User>("/api/sk");
+app.MapSkLogin<User>("/api/sk");   // POST /sk/login for the app, browser routes under /api/sk
 ```
 
 For access to the container there is an overload `AddSkLogin<User>((sp, o) => …)`.
-The `login` endpoint reads the `text/plain` body itself; body size limits
+The `/sk/login` endpoint reads the `text/plain` body itself; body size limits
 and MVC binding do not apply to it.
 
 Sign-in page: the widget comes from
 [`@paymastech/sk-login-widget`](https://github.com/paymastech/sk-login/tree/main/packages/widget)
-(a single file `sk-login-widget.global.js`, no framework; a copy lives in
-`examples/AspNetCoreDemo/wwwroot`):
+(npm package with an ESM build, or the single file `sk-login-widget.global.js`
+with no framework; a copy of the latter lives in `examples/AspNetCoreDemo/wwwroot`):
 
 ```html
-<!-- from the hub (see "Hub"), or a self-hosted copy of sk-login-widget.global.js -->
-<script src="https://auth.secretkeeper.net/widget.js"></script>
+<script src="/sk-login-widget.js"></script>
 <button id="login">Sign in</button>
 <script>
   const login = SkLoginWidget.mountSkLogin({
@@ -84,71 +81,36 @@ Sign-in page: the widget comes from
 </script>
 ```
 
-## Onboarding a new service (checklist)
+## How the app finds your server
 
-The Secret Keeper app only sends envelopes to targets it knows. There are
-two ways to become one:
+The QR (and the `sk://` link) carries the sign-in request together with
+who you are: `https://secretkeeper.net/auth?v=1&sid=…&site=<host>&address=<sk1…>`.
+The app shows `<host>` to the user, encrypts its envelopes to `<address>`
+and posts them to `https://<host>/sk/login`: the endpoint is derived from
+the host by convention (protocol § 4.5), there is no registry and no
+release of the app per service. The address in the QR is treated like the
+address in a contact's QR: it only says whom to encrypt to, and the two-step
+challenge proves that the server holds the matching key.
 
-- **Through the hub** (recommended): the app has a single built-in entry
-  for the hub (`auth.secretkeeper.net`), and your service is registered in
-  the hub's registry under a short `destination` id. No app release is
-  needed. The hub relays the app's envelopes to your `login` endpoint and
-  does not read them: they are encrypted to your server address.
-- **Direct**: your id, `login` URL and server address are built into the
-  app, which requires an app release per service.
+So a service needs three things:
 
-Steps for the hub mode:
-
-1. Generate a server mnemonic (once, keep it as a secret):
+1. A server mnemonic (once, keep it as a secret):
    `string.Join(' ', Identity.GenerateMnemonic())` or from the demo:
    `dotnet run --project examples/AspNetCoreDemo -- --mnemonic`.
-2. Run the service with `Target = new SkLoginTarget { Id = "<destination>", Hub = "auth_secretkeeper", Owner = "<sk1…>", PublicUrl = … }`.
-   `Id` is the short Latin name you want in the registry (`[a-z0-9_-]{1,32}`),
-   `Hub` is the hub's target id in the app (`auth_secretkeeper` in
-   production; the Secret Keeper team may give you a staging one), `Owner`
-   is the `sk1…` address of your own Secret Keeper app (Settings, address).
-3. Open `GET <PublicUrl>/api/sk/target`: it returns `id`, `hub`, `url`
-   (your `login` endpoint), `serverAddress` (`sk1…`), `checkDigits` for
-   verification by voice and `ownerHash` (the hash of `Owner`; the address
-   itself is not published).
-4. Open the hub (`https://auth.secretkeeper.net/`), sign in with the phone
-   whose address you put into `Owner`, and submit the URL of your service.
-   The catalog fetches `GET target`, checks that `ownerHash` matches the
-   signed-in address and that `hub` names this hub, and creates the
-   registry entry. From that moment the sign-in works with the released
-   app; the app shows your host name until the hub owner approves the
-   display name you propose in the catalog.
-5. The `login` endpoint must be reachable from the internet over HTTPS: it
-   is called by the hub, not by the browser.
-6. If `serverAddress` changes (a new mnemonic), press "Re-check" on your
-   entry in the catalog: envelopes are encrypted to this address.
+2. `Target = new SkLoginTarget { Site = "<host>" }`, where `<host>` is the
+   public host of your site in the form the app accepts: lowercase ASCII,
+   at least one dot, no scheme, port or path; IDN hosts in punycode.
+   `localhost` and IP literals are not sites.
+3. `POST https://<host>/sk/login` reachable from the internet over HTTPS
+   (`MapSkLogin` maps it at the root, whatever prefix you choose for the
+   browser routes). The app checks nothing else: `GET target` is a public
+   description for people and tooling.
 
-In the direct mode steps 2-4 differ: run without `Hub` and `Owner`, and
-the team adds the target to the app and ships a release; until then,
-sign-in is tested with the phone emulation (see the demo, `DEMO_FAKE_PHONE=1`).
-
-## Hub
-
-The hub is a relay operated by the Secret Keeper team. With `Hub` set the
-QR becomes `https://secretkeeper.net/auth?v=1&sid=…&target=<hub>&destination=<id>`.
-The app asks the hub for the display name and server address of
-`destination`, encrypts the usual envelope to your server, wraps it into an
-outer envelope addressed to the hub, and posts it there. The hub decrypts
-only the outer envelope (which authenticates the sender), forwards the
-inner one to your `login` URL and returns your reply unchanged. Your server
-sees exactly the same envelopes as in the direct mode, so the library does
-not change behavior; only the QR does.
-
-The hub also serves the browser widget, so you do not have to host it:
-
-```html
-<script src="https://auth.secretkeeper.net/widget.js"></script>
-```
-
-The hub keeps a catalog of registered services. Service owners sign in to
-the catalog with Secret Keeper and register their service by URL (see the
-checklist above); the hub owner moderates display names and can block an
-entry. The entry is public at `GET <hub>/targets/<destination>`.
+Apps built into Secret Keeper (whose URL and server address ship with the
+app) use `Target = new SkLoginTarget { Id = "<id>" }` instead; the QR then
+carries `target=<id>`. A site that moved from such an embedded entry to
+`Site` lists the old id in `LegacyTargets`: older app builds still send it
+to the old `<prefix>/login` route, which `MapSkLogin` keeps as an alias.
 
 ## Secrets and environment
 
@@ -156,30 +118,27 @@ entry. The entry is public at `GET <hub>/targets/<destination>`.
   leak means the ability to impersonate the service to the app. Keep it in
   a secret manager / user-secrets, never log it. Instead of a mnemonic you
   can pass a ready `Identity` (`Identity.DeriveIdentityKeys`).
-- `SK_OWNER_ADDRESS` (suggested name): the `sk1…` address of your own
-  Secret Keeper app, passed as `Target.Owner`. Not a secret, but only its
-  hash is published; it is what lets you manage the service entry in the
-  hub catalog.
 - The module makes no network calls: everything happens between your
   server, the browser and the user's phone.
 
 ## HTTP API
 
-The default prefix is `/api/sk`. Browser routes: `init`, `status`,
-`code`. Phone route: `login`. Service route: `target`.
+The app's route is fixed by the protocol; the browser routes live under the
+prefix you pass to `MapSkLogin` (`/api/sk` by default).
 
 | Method and path | Caller | Request | Response |
 | --- | --- | --- | --- |
-| `POST init` | browser | empty | `{ sid, payloadUrl, schemeUrl, expiresAt, ttlMs, qrSvg? }` |
-| `POST login` | app | `text/plain`, envelope | challenge envelope as `text/plain` (for `sk-login`), `{ sent: true }` (for `sk-login-code`), `204` (for `sk-login-cancel`) or `4xx { error, message }` |
-| `GET status?sid=` | browser | | `{ state, reason?, ...extra }`, `state`: `new`, `challenged`, `authenticated`, `denied`, `cancelled`, `expired` |
-| `POST code` | browser | `{ sid, code }` | `{ ok: true, ...extra }`, `403 { denied, reason, message }` or `4xx { error, message }` |
-| `GET target` | people | | `{ id, hub?, v, url, serverAddress, checkDigits, ownerHash? }` |
+| `POST /sk/login` | app | `text/plain`, envelope | challenge envelope as `text/plain` (for `sk-login`), `{ sent: true }` (for `sk-login-code`), `204` (for `sk-login-cancel`) or `4xx { error, message }` |
+| `POST <prefix>/login` | older app builds | same | same; alias of `/sk/login` for an embedded id listed in `LegacyTargets` |
+| `POST <prefix>/init` | browser | empty | `{ sid, payloadUrl, schemeUrl, expiresAt, ttlMs, qrSvg? }` |
+| `GET <prefix>/status?sid=` | browser | | `{ state, reason?, ...extra }`, `state`: `new`, `challenged`, `authenticated`, `denied`, `cancelled`, `expired` |
+| `POST <prefix>/code` | browser | `{ sid, code }` | `{ ok: true, ...extra }`, `403 { denied, reason, message }` or `4xx { error, message }` |
+| `GET <prefix>/target` | people | | `{ id, site?, v, url, serverAddress, checkDigits }` |
 
 | `error` code | Status | When |
 | --- | --- | --- |
 | `bad-envelope` | 400 / 413 | the body is not an envelope, failed to decrypt, is addressed to another server, or is too large |
-| `bad-meta` | 400 | meta lacks `type`/`sid`, the target is foreign or the type is unknown |
+| `bad-meta` | 400 | meta lacks `type`/`sid`, the target is another service (neither `Site`/`Id` nor a `LegacyTargets` entry) or the type is unknown |
 | `in-progress` | 409 | a request from another address is already in progress for this sid, or a code/cancel arrived without a request |
 | `sid-expired` | 404 | sid not found or expired (2 minutes by default) |
 | `code-invalid` | 400 / 410 | the code did not match; after 5 attempts the request is closed (410) |
@@ -194,10 +153,10 @@ calls for that sid answer `expired`.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `Mnemonic` or `Identity` | one is required | server identity |
-| `Target.Id` | required | service id: the hub `destination` (hub mode) or the entry in the app's target list (direct mode) |
-| `Target.Hub` | | hub target id (e.g. `auth_secretkeeper`); switches the QR to `target=<hub>&destination=<id>` |
-| `Target.Owner` | | `sk1…` address of the service owner; published as `ownerHash` in `GET target`, lets this address manage the entry in the hub catalog |
-| `Target.PublicUrl` | from `Host` and `X-Forwarded-Proto` | origin for `GET target` |
+| `Target.Site` | one of `Site`/`Id` | the site's host; goes into the QR with the server address and into `meta.data.target` |
+| `Target.Id` | one of `Site`/`Id` | embedded target id for apps built into Secret Keeper; the QR carries `target=<id>` |
+| `Target.LegacyTargets` | | other `meta.data.target` values to accept, e.g. the embedded id a site had before `Site` |
+| `Target.PublicUrl` | from `Host` and `X-Forwarded-Proto` | origin of the `url` in `GET target` |
 | `Access(address)` | required | `AccessDecision<T>.Granted(user)` or `.Denied(reason, message?)` |
 | `OnAuthenticated(user, HttpContext)` | | session, cookie, token; the return value goes into the JSON for the browser |
 | `Store` | `MemoryPendingStore<T>` | request store, see "Multiple replicas" |
@@ -236,7 +195,7 @@ is `SET sid json PX ttl`.
 ## Development
 
 ```bash
-dotnet test                                   # 33 tests: app vectors, protocol, HTTP
+dotnet test                                   # 35 tests: app vectors, protocol, HTTP
 dotnet run --project examples/AspNetCoreDemo  # http://localhost:5000, random mnemonic
 DEMO_FAKE_PHONE=1 dotnet run --project examples/AspNetCoreDemo   # plus POST /demo/phone?sid=…
 dotnet pack -c Release -o ./artifacts

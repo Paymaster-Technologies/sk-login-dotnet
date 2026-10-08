@@ -13,14 +13,14 @@ an adapter on top of this package:
 var sk = new SkLogin<User>(new SkLoginOptions<User>
 {
     Identity = Identity.FromMnemonic(Environment.GetEnvironmentVariable("SK_SERVER_MNEMONIC")!),
-    Target = "my-service",
+    Site = "api.example.com",   // your public host: the QR carries it with the server address, the app posts to https://<host>/sk/login
     Access = async address => await users.Has(address) ? AccessDecision<User>.Granted(await users.Get(address)) : AccessDecision<User>.Denied("unknown"),
 });
 
 // POST init (browser): QR and sid
 var init = await sk.InitAsync(Context.FromHeaders(name => headers[name], remoteIp));
 
-// POST login (phone, text/plain)
+// POST /sk/login (phone, text/plain)
 try
 {
     var reply = await sk.HandleEnvelopeAsync(bodyText, Messages.LangFromAcceptLanguage(acceptLanguage));
@@ -35,4 +35,4 @@ var poll = await sk.PollAsync(sid);            // poll.State == "authenticated" 
 var user = await sk.SubmitCodeAsync(sid, code); // LoginException on a wrong code or refusal
 ```
 
-Protocol, API and onboarding description: [repository README](https://github.com/paymastech/sk-login-dotnet#readme).
+Protocol, API and how the app finds your server: [repository README](https://github.com/paymastech/sk-login-dotnet#readme).

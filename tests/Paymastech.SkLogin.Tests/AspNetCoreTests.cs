@@ -20,7 +20,7 @@ public sealed class AspNetCoreTests : IAsyncLifetime
     private HttpClient _client = null!;
     private SkLoginService<User> _sk = null!;
     private readonly HashSet<string> _blocked = new();
-    private const string Owner = "sk1j5lsgzk3n2uvempjujk25xeqyx0nsch2k0tg2emg4hmcas4e659sqtsjdc";
+    private const string Site = "demo.example";
 
     public async Task InitializeAsync()
     {
@@ -31,7 +31,7 @@ public sealed class AspNetCoreTests : IAsyncLifetime
                 services.AddSkLogin<User>(o =>
                 {
                     o.Mnemonic = string.Join(' ', Identity.GenerateMnemonic());
-                    o.Target = new SkLoginTarget { Id = "demo", PublicUrl = "https://api.example.com/", Owner = Owner };
+                    o.Target = new SkLoginTarget { Site = Site, LegacyTargets = new[] { "demo" }, PublicUrl = "https://api.example.com/" };
                     o.Access = address => ValueTask.FromResult(_blocked.Contains(address)
                         ? AccessDecision<User>.Denied("blocked")
                         : AccessDecision<User>.Granted(new User(address, "Ann")));
@@ -62,23 +62,41 @@ public sealed class AspNetCoreTests : IAsyncLifetime
 
     private IdentityKeys Phone { get; } = Identity.DeriveIdentityKeys(Identity.GenerateMnemonic());
 
-    private Task<HttpResponseMessage> PostEnvelope(string type, string sid, string text = "", int challenge = 1) =>
-        _client.PostAsync("/auth/sk/login", new StringContent(
-            Envelope.Encrypt(Phone, _sk.ServerAddress, text, SkLogin.LoginMeta("demo", type, sid, challenge)),
+    /// <summary>What the app does: POST to https://&lt;site&gt;/sk/login, the host taken from the QR.</summary>
+    private Task<HttpResponseMessage> PostEnvelope(string type, string sid, string text = "", int challenge = 1, string path = "/sk/login", string target = Site) =>
+        _client.PostAsync(path, new StringContent(
+            Envelope.Encrypt(Phone, _sk.ServerAddress, text, SkLogin.LoginMeta(target, type, sid, challenge)),
             Encoding.UTF8, "text/plain"));
 
     [Fact]
     public async Task TargetDescribesTheService()
     {
         var t = await Json(await _client.GetAsync("/auth/sk/target"));
-        Assert.Equal("demo", t.GetProperty("id").GetString());
+        Assert.Equal(Site, t.GetProperty("id").GetString());
+        Assert.Equal(Site, t.GetProperty("site").GetString());
         Assert.Equal(1, t.GetProperty("v").GetInt32());
-        Assert.Equal("https://api.example.com/auth/sk/login", t.GetProperty("url").GetString());
+        // The app's endpoint is by convention at the root of the site, whatever the browser prefix is.
+        Assert.Equal("https://api.example.com/sk/login", t.GetProperty("url").GetString());
         Assert.Equal(_sk.ServerAddress, t.GetProperty("serverAddress").GetString());
         Assert.Matches(@"^\d{5}( \d{5}){4}$", t.GetProperty("checkDigits").GetString());
-        // Only the hash of the owner address is published; the hub catalog compares it with the signed-in address.
-        Assert.Equal(SkLogin.OwnerHash(Owner), t.GetProperty("ownerHash").GetString());
         Assert.False(t.TryGetProperty("hub", out _));
+        Assert.False(t.TryGetProperty("ownerHash", out _));
+    }
+
+    [Fact]
+    public async Task PrefixedLoginIsAnAliasForOlderAppBuilds()
+    {
+        var sid = (await Json(await _client.PostAsync("/auth/sk/init", null))).GetProperty("sid").GetString()!;
+        // An older build knows the service by the embedded id "demo" and posts to the old route.
+        var res = await PostEnvelope("sk-login", sid, path: "/auth/sk/login", target: "demo");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal("challenged", (await Json(await _client.GetAsync($"/auth/sk/status?sid={sid}"))).GetProperty("state").GetString());
+
+        // A foreign target is refused on both routes.
+        var sid2 = (await Json(await _client.PostAsync("/auth/sk/init", null))).GetProperty("sid").GetString()!;
+        var foreign = await PostEnvelope("sk-login", sid2, target: "another.example");
+        Assert.Equal(HttpStatusCode.BadRequest, foreign.StatusCode);
+        Assert.Equal("bad-meta", (await Json(foreign)).GetProperty("error").GetString());
     }
 
     [Fact]
@@ -131,11 +149,11 @@ public sealed class AspNetCoreTests : IAsyncLifetime
         Assert.True(body.GetProperty("ok").GetBoolean());
         Assert.Equal("t-Ann", body.GetProperty("token").GetString());
 
-        var garbage = await _client.PostAsync("/auth/sk/login", new StringContent("hello", Encoding.UTF8, "text/plain"));
+        var garbage = await _client.PostAsync("/sk/login", new StringContent("hello", Encoding.UTF8, "text/plain"));
         Assert.Equal(HttpStatusCode.BadRequest, garbage.StatusCode);
         Assert.Equal("bad-envelope", (await Json(garbage)).GetProperty("error").GetString());
 
-        var huge = await _client.PostAsync("/auth/sk/login", new StringContent(new string('a', 20_000), Encoding.UTF8, "text/plain"));
+        var huge = await _client.PostAsync("/sk/login", new StringContent(new string('a', 20_000), Encoding.UTF8, "text/plain"));
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, huge.StatusCode);
 
         var noSid = await _client.GetAsync("/auth/sk/status");
@@ -151,9 +169,9 @@ public sealed class AspNetCoreTests : IAsyncLifetime
         var code = Envelope.Decrypt(Phone.X25519Private, await challengeRes.Content.ReadAsStringAsync()).Text;
 
         // Via the app: 403 with the message in the request language, browser status is denied.
-        var viaApp = new HttpRequestMessage(HttpMethod.Post, "/auth/sk/login")
+        var viaApp = new HttpRequestMessage(HttpMethod.Post, "/sk/login")
         {
-            Content = new StringContent(Envelope.Encrypt(Phone, _sk.ServerAddress, code, SkLogin.LoginMeta("demo", "sk-login-code", sid)), Encoding.UTF8, "text/plain"),
+            Content = new StringContent(Envelope.Encrypt(Phone, _sk.ServerAddress, code, SkLogin.LoginMeta(Site, "sk-login-code", sid)), Encoding.UTF8, "text/plain"),
         };
         viaApp.Headers.AcceptLanguage.ParseAdd("ru-RU");
         var res = await _client.SendAsync(viaApp);

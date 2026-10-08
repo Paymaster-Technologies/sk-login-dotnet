@@ -12,17 +12,19 @@ namespace Paymastech.SkLogin.AspNetCore;
 /// </summary>
 public delegate ValueTask<object?> OnAuthenticated<TUser>(TUser user, HttpContext http);
 
+/// <summary>Who the service is to the app. Exactly one of <see cref="Site"/> and <see cref="Id"/>.</summary>
 public sealed class SkLoginTarget
 {
-    /// <summary>Service id: the entry in the Secret Keeper app's skLoginTargets (direct mode) or the
-    /// destination registered at the hub (hub mode).</summary>
-    public required string Id { get; init; }
-    /// <summary>Hub mode: the hub's target id in the app (for example auth_secretkeeper). The QR becomes
-    /// target=&lt;hub&gt;&amp;destination=&lt;Id&gt;; the hub relays the app's envelopes to this server's login route.</summary>
-    public string? Hub { get; init; }
-    /// <summary>sk1… address of the service owner (their Secret Keeper app). Only its hash goes to GET target
-    /// as ownerHash; the hub catalog lets this address register and manage the service entry. Not a secret.</summary>
-    public string? Owner { get; init; }
+    /// <summary>The site's host (for example api.example.com). The QR carries site=&lt;host&gt;&amp;address=&lt;sk1…&gt;
+    /// and the app posts envelopes to https://&lt;host&gt;/sk/login, so that path must be served on this host
+    /// (MapSkLogin maps it). Lower-cased; a bare ASCII host, IDN in punycode.</summary>
+    public string? Site { get; init; }
+    /// <summary>An embedded target id instead of a site: an app whose URL and server address are built into
+    /// Secret Keeper. The QR then carries target=&lt;id&gt;.</summary>
+    public string? Id { get; init; }
+    /// <summary>Other meta.data.target values to accept for a while: the embedded id the site had before it
+    /// moved to Site (older app builds still send it, to the old login route).</summary>
+    public IReadOnlyCollection<string>? LegacyTargets { get; init; }
     /// <summary>Public origin of the service for GET target (for example https://api.example.com);
     /// without it, built from the request's Host and X-Forwarded-Proto.</summary>
     public string? PublicUrl { get; init; }
@@ -59,9 +61,9 @@ public sealed class SkLoginServiceOptions<TUser>
         return new SkLoginOptions<TUser>
         {
             Identity = identity,
+            Site = Target.Site,
             Target = Target.Id,
-            Hub = Target.Hub,
-            Owner = Target.Owner,
+            LegacyTargets = Target.LegacyTargets,
             Access = Access,
             Store = Store,
             Ttl = Ttl,

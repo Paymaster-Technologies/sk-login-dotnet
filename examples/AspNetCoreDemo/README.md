@@ -24,4 +24,4 @@ curl -X POST 'http://localhost:5000/demo/phone?sid=…&cancel=1'  # request + ca
 
 `wwwroot/sk-login-widget.js` is the built `@paymastech/sk-login-widget`
 (`sk-login-widget.global.js`, 0.5.0) from
-[paymastech/sk-login](https://github.com/paymastech/sk-login).
+[Paymaster-Technologies/sk-login](https://github.com/Paymaster-Technologies/sk-login).

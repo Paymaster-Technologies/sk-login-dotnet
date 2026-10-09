@@ -8,8 +8,8 @@
     <Authors>Paymastech</Authors>
     <Company>Paymastech</Company>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/paymastech/sk-login-dotnet</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/paymastech/sk-login-dotnet.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Paymaster-Technologies/sk-login-dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Paymaster-Technologies/sk-login-dotnet.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

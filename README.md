@@ -7,7 +7,7 @@ gets in. The server and the app exchange encrypted envelopes; the server
 sees only the user's address.
 
 This is the .NET implementation of the same protocol as
-[paymastech/sk-login](https://github.com/paymastech/sk-login) (Node:
+[Paymaster-Technologies/sk-login](https://github.com/Paymaster-Technologies/sk-login) (Node:
 core, NestJS module and browser widget). The servers are interchangeable:
 the widget from that repository works with this server unchanged, and
 the cryptography is verified against the app with the same test vectors.
@@ -25,7 +25,7 @@ dotnet add package Paymastech.SkLogin.AspNetCore
 ```
 
 Until the packages are published to NuGet, the `.nupkg` files are attached to the
-[release](https://github.com/paymastech/sk-login-dotnet/releases/latest):
+[release](https://github.com/Paymaster-Technologies/sk-login-dotnet/releases/latest):
 download both into a folder and add it as a source
 (`dotnet nuget add source ./packages -n sk-login-local`).
 
@@ -64,7 +64,7 @@ The `/sk/login` endpoint reads the `text/plain` body itself; body size limits
 and MVC binding do not apply to it.
 
 Sign-in page: the widget comes from
-[`@paymastech/sk-login-widget`](https://github.com/paymastech/sk-login/tree/main/packages/widget)
+[`@paymastech/sk-login-widget`](https://github.com/Paymaster-Technologies/sk-login/tree/main/packages/widget)
 (npm package with an ESM build, or the single file `sk-login-widget.global.js`
 with no framework; a copy of the latter lives in `examples/AspNetCoreDemo/wwwroot`):
 

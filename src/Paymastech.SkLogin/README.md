@@ -35,4 +35,4 @@ var poll = await sk.PollAsync(sid);            // poll.State == "authenticated" 
 var user = await sk.SubmitCodeAsync(sid, code); // LoginException on a wrong code or refusal
 ```
 
-Protocol, API and how the app finds your server: [repository README](https://github.com/paymastech/sk-login-dotnet#readme).
+Protocol, API and how the app finds your server: [repository README](https://github.com/Paymaster-Technologies/sk-login-dotnet#readme).

@@ -31,7 +31,7 @@ app.MapSkLogin<User>("/api/sk");
 ```
 
 Browser side: the `@paymastech/sk-login-widget` widget (npm, or a single JS
-file with no framework) from [paymastech/sk-login](https://github.com/paymastech/sk-login).
+file with no framework) from [Paymaster-Technologies/sk-login](https://github.com/Paymaster-Technologies/sk-login).
 
 Full description of options, HTTP API, error codes, how the app finds your
-server and running on multiple replicas: [repository README](https://github.com/paymastech/sk-login-dotnet#readme).
+server and running on multiple replicas: [repository README](https://github.com/Paymaster-Technologies/sk-login-dotnet#readme).
